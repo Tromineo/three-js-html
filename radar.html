@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Radar de ideias</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #04141a;
+      --panel: #082530dd;
+      --line: #14485a;
+      --ink: #cfeee8;
+      --dim: #6f9ca0;
+      --acc: #3de0c4;
+      box-sizing: border-box;
+      padding-top: env(safe-area-inset-top, 0px);
+      padding-bottom: env(safe-area-inset-bottom, 0px)
+    }
+
+    html {
+      height: 100%
+    }
+
+    body {
+      margin: 0;
+      height: 100%;
+      background: var(--bg);
+      color: var(--ink);
+      font: 14px/1.45 "Segoe UI", system-ui, sans-serif;
+      overflow: hidden
+    }
+
+    canvas {
+      display: block;
+      width: 100%;
+      height: 100%
+    }
+
+    #panel {
+      position: fixed;
+      top: max(12px, env(safe-area-inset-top, 0px));
+      left: 12px;
+      width: min(330px, calc(100vw - 24px));
+      max-height: calc(100% - 24px);
+      overflow: auto;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 14px;
+      backdrop-filter: blur(6px)
+    }
+
+    h1 {
+      font: 600 17px/1.2 Georgia, "Times New Roman", serif;
+      margin: 0 0 2px
+    }
+
+    h2 {
+      font: 600 13px/1.2 Georgia, serif;
+      margin: 14px 0 6px;
+      color: var(--dim)
+    }
+
+    p.s {
+      margin: 0 0 10px;
+      color: var(--dim);
+      font-size: 12.5px
+    }
+
+    input,
+    select,
+    button {
+      background: #031017;
+      color: var(--ink);
+      border: 1px solid var(--line);
+      border-radius: 4px;
+      padding: 6px 8px;
+      font: inherit;
+      box-sizing: border-box
+    }
+
+    input[type=text] {
+      width: 100%
+    }
+
+    button {
+      background: #0c3947;
+      cursor: pointer
+    }
+
+    button:hover {
+      background: #115063
+    }
+
+    button.p {
+      background: var(--acc);
+      color: #02201b;
+      border-color: var(--acc)
+    }
+
+    :focus-visible {
+      outline: 2px solid var(--acc);
+      outline-offset: 2px
+    }
+
+    .row {
+      display: flex;
+      gap: 6px;
+      margin: 6px 0
+    }
+
+    .row>* {
+      flex: 1;
+      min-width: 0
+    }
+
+    .sl {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--dim);
+      font-size: 12.5px;
+      margin-top: 8px
+    }
+
+    .sl select {
+      flex: 1
+    }
+
+    .it {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 5px 4px;
+      border-bottom: 1px solid #0d3342;
+      cursor: pointer;
+      font-size: 13px
+    }
+
+    .it:hover,
+    .it.sel {
+      background: #0c3947
+    }
+
+    .it i {
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      flex: none
+    }
+
+    .it span {
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap
+    }
+
+    .it small {
+      color: var(--dim);
+      font-variant-numeric: tabular-nums
+    }
+
+    .empty {
+      color: var(--dim);
+      font-size: 12.5px
+    }
+
+    #info {
+      position: fixed;
+      right: 12px;
+      bottom: max(12px, env(safe-area-inset-bottom, 0px));
+      width: min(260px, calc(100vw - 24px));
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 10px 12px;
+      font-size: 13px
+    }
+
+    #info b {
+      font: 600 15px/1.3 Georgia, serif;
+      display: block;
+      margin-bottom: 4px;
+      word-break: break-word
+    }
+
+    #info .row {
+      margin-top: 8px
+    }
+
+    @media(max-width:600px) {
+      #panel {
+        max-height: 48%
+      }
+
+      #info {
+        bottom: auto;
+        top: calc(52% + 8px);
+        right: 12px
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <canvas id="c" aria-label="Radar de ideias e tarefas"></canvas>
+  <div id="panel">
+    <h1>Radar de ideias</h1>
+    <p class="s">Tudo começa no centro e se afasta com o tempo. Aja antes que saia do radar.</p>
+    <input type="text" id="txt" maxlength="80" placeholder="Nova ideia ou tarefa" aria-label="Texto do item">
+    <div class="row">
+      <select id="cat" aria-label="Categoria"></select>
+      <select id="pri" aria-label="Prioridade">
+        <option value="0">Alta</option>
+        <option value="1" selected>Média</option>
+        <option value="2">Baixa</option>
+      </select>
+      <button id="add" class="p">Adicionar</button>
+    </div>
+    <div class="sl">Tempo até sair <select id="life">
+        <option value="120000">2 minutos (demo)</option>
+        <option value="86400000">1 dia</option>
+        <option value="259200000">3 dias</option>
+        <option value="604800000" selected>7 dias</option>
+        <option value="2592000000">30 dias</option>
+      </select></div>
+    <h2>No radar</h2>
+    <div id="list"></div>
+    <h2>Saíram do radar</h2>
+    <div id="gone"></div>
+  </div>
+  <div id="info">Passe o cursor ou toque em um ponto.</div>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script>
+    /*
+     * Raciocinio de construcao da aplicacao:
+     * A pagina combina HTML/CSS para controles e informacoes com Three.js para a visualizacao 3D;
+     * assim, formularios e listas continuam acessiveis e a cena concentra o componente espacial.
+     * Cada ideia e mantida como dado simples (texto, categoria, prioridade e instante de criacao);
+     * o tempo restante e calculado a partir desses dados, em vez de depender de contadores ativos,
+     * para que o progresso continue correto depois de fechar e reabrir a pagina.
+     * A visualizacao transforma esses atributos em coordenadas: o tempo define a distancia ao centro,
+     * a categoria define o setor e a prioridade define a altura, tornando o estado legivel no radar.
+     * O estado e salvo no localStorage por ser uma demonstracao local sem servico de backend;
+     * buffers reutilizaveis e um loop de animacao atualizam pontos e varredura sem reconstruir a cena.
+     * As funcoes ficam separadas por responsabilidade: estado, cena, interface, interacao e animacao.
+     */
+    const raio = 10, escala = 3, capacidade = 300, volta_completa = Math.PI * 2, KEY = 'radar-ideias-v1'; /* Define o raio, a escala vertical, a capacidade visual, uma volta completa e a chave de persistência. */
+    /* Declara as categorias do radar e a cor de cada uma. */
+    const CATEGORIAS = [
+      { n: 'Ideias', c: '#ffb347' }, 
+      { n: 'Trabalho', c: '#6fc3ff' }, 
+      { n: 'Pessoal', c: '#5ee6a8' }, 
+      { n: 'Estudos', c: '#c79bff' }
+    ]; 
+    const PRIORIDADES = ['Alta', 'Média', 'Baixa']; /* Associa os índices numéricos de prioridade aos rótulos mostrados na interface. */
+    const $ = id => document.getElementById(id); /* Cria um atalho para localizar elementos HTML pelo id. */
+    $('cat').innerHTML = CATEGORIAS.map((c, i) => `<option value="${i}">${c.n}</option>`).join(''); /* Cria as opções do seletor de categorias. */
+
+    /* ---------- estado ---------- */
+    let items = [], life = 604800000, sel = null, hover = null; /* Mantém os itens, o prazo de vida e os ids selecionado e sob o cursor. */
+    function save() { /* Persiste no navegador o estado atual do radar. */
+      try { /* Tenta gravar sem interromper a aplicação se o armazenamento estiver indisponível. */
+        localStorage.setItem(KEY, JSON.stringify({ items, life })) /* Serializa os itens e o prazo na chave definida acima. */
+      } catch (e) { /* Ignora erros de armazenamento, como quota cheia ou acesso bloqueado. */
+      } /* Encerra o tratamento de erro da gravação. */
+    } /* Encerra a função de persistência. */
+    function load() { /* Recupera do navegador os itens e o prazo previamente gravados. */
+      try { /* Protege o carregamento contra dados inválidos ou armazenamento inacessível. */
+        const s = JSON.parse(localStorage.getItem(KEY)); /* Lê e converte o conteúdo salvo em objeto JavaScript. */
+        if (s && Array.isArray(s.items)) { /* Aceita o conteúdo somente se houver uma lista de itens válida. */
+          items = s.items; /* Restaura os itens do radar. */
+          life = s.life || life; /* Restaura o prazo ou mantém o padrão se ele estiver ausente. */
+          return true; /* Informa que o estado foi carregado. */
+        } /* Encerra a validação do estado carregado. */
+      } catch (e) { /* Trata JSON corrompido ou falha na leitura sem interromper a inicialização. */
+      } /* Encerra o tratamento de erro do carregamento. */
+      return false; /* Informa que não foi possível recuperar um estado utilizável. */
+    } /* Encerra a função de carregamento. */
+    const uid = () => Math.random().toString(36).slice(2, 9); /* Gera um identificador curto aleatório para cada item. */
+    const jit = id => { let h = 0; for (const ch of id) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return (h % 1000) / 1000 - .5 }; /* Deriva do id um pequeno deslocamento estável para separar pontos visualmente. */
+    function mk(text, cat, pri, ageFrac) { const id = uid(); return { id, text, cat, pri, t0: Date.now() - ageFrac * life } } /* Cria um item com id e instante inicial compatível com sua idade simulada. */
+    if (!load()) { items = [mk('Escrever o artigo sobre sonares', 0, 1, .05), mk('Enviar proposta ao cliente', 1, 0, .3), mk('Marcar consulta médica', 2, 0, .55), mk('Estudar WebGL shaders', 3, 2, .7), mk('Ideia de app de receitas', 0, 2, .85), mk('Renovar passaporte', 2, 1, .15)]; save() } /* Se não há estado salvo, cria exemplos demonstrativos e grava-os. */
+    $('life').value = String(life); /* Sincroniza o seletor de prazo com o valor carregado. */
+    const frac = it => (Date.now() - it.t0) / life; /* Calcula a fração do prazo já transcorrida para um item. */
+    const fmt = ms => { const m = Math.max(0, ms) / 60000; if (m < 1) return Math.round(m * 60) + 's'; if (m < 60) return Math.round(m) + ' min'; if (m < 1440) return (m / 60).toFixed(1) + ' h'; return (m / 1440).toFixed(1) + ' d' }; /* Formata milissegundos como segundos, minutos, horas ou dias. */
+
+    /* ---------- cena ---------- */
+    const canvas = $('c'), renderer = new THREE.WebGLRenderer({ canvas, antialias: true }); /* Inicializa o renderizador WebGL ligado ao canvas da página. */
+    renderer.setPixelRatio(Math.min(devicePixelRatio, 2)); /* Limita a densidade de pixels para equilibrar nitidez e desempenho. */
+    const scene = new THREE.Scene(), camera = new THREE.PerspectiveCamera(45, 1, .1, 200); /* Cria a cena 3D e a câmera em perspectiva. */
+    let th = .5, ph = 1, dist = 26; /* Guarda ângulos e distância usados para orbitar a câmera. */
+    const placeCam = () => { camera.position.set(dist * Math.sin(ph) * Math.sin(th), dist * Math.cos(ph), dist * Math.sin(ph) * Math.cos(th)); camera.lookAt(0, -1, 0) }; /* Posiciona a câmera em coordenadas esféricas e mira no centro do radar. */
+    const resize = () => { renderer.setSize(innerWidth, innerHeight, false); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix() }; /* Redimensiona a renderização e atualiza a proporção da câmera. */
+    addEventListener('resize', resize); resize(); placeCam(); /* Configura o redimensionamento e posiciona inicialmente a câmera. */
+    const lm = new THREE.LineBasicMaterial({ color: 0x14485a }); /* Define o material das linhas da grade do radar. */
+    const line = (a, b) => scene.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([a, b]), lm)); /* Cria e adiciona à cena uma linha entre dois pontos. */
+    for (let i = 1; i <= 5; i++) { const p = []; for (let a = 0; a <= 128; a++)p.push(new THREE.Vector3(Math.sin(a / 128 * TAU) * R * i / 5, 0, -Math.cos(a / 128 * TAU) * R * i / 5)); scene.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(p), lm)) } /* Desenha cinco anéis concêntricos amostrando cada círculo em 128 segmentos. */
+    for (let a = 0; a < 4; a++) { const t = a / 4 * TAU; line(new THREE.Vector3(), new THREE.Vector3(Math.sin(t) * R, 0, -Math.cos(t) * R)) } /* Desenha quatro raios que dividem o radar em setores de categoria. */
+    const own = new THREE.Mesh(new THREE.SphereGeometry(.18, 16, 12), new THREE.MeshBasicMaterial({ color: 0xcfeee8 })); scene.add(own); /* Marca o centro do radar com uma pequena esfera clara. */
+    CATEGORIAS.forEach((c, i) => { /* Cria uma etiqueta visual para cada setor do radar. */
+      const cv = document.createElement('canvas'); cv.width = 256; cv.height = 64; const g = cv.getContext('2d'); g.font = '600 34px Georgia,serif'; g.fillStyle = c.c; g.textAlign = 'center'; g.fillText(c.n, 128, 44); /* Desenha o nome da categoria em um canvas usado como textura. */
+      const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(cv), transparent: true, depthTest: false, fog: false })); /* Converte o texto em sprite sempre legível sobre a cena. */
+      const t = (i * 90 + 45) * Math.PI / 180; s.position.set(Math.sin(t) * R * 1.12, 0, -Math.cos(t) * R * 1.12); s.scale.set(4, 1, 1); scene.add(s) /* Posiciona a etiqueta no meio do setor correspondente e a adiciona à cena. */
+    }); /* Encerra a criação das etiquetas das categorias. */
+    const sweepMat = new THREE.ShaderMaterial({ /* Define o material GLSL da varredura luminosa do radar. */
+      transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, uniforms: { uA: { value: 0 } }, /* Configura transparência, brilho aditivo e ângulo variável da varredura. */
+      vertexShader: 'varying vec2 p;void main(){p=position.xy;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}', /* Passa coordenadas locais do disco ao shader de fragmentos e projeta os vértices. */
+      fragmentShader: 'uniform float uA;varying vec2 p;void main(){float b=atan(p.x,p.y);float d=mod(uA-b,6.2831853);float a=exp(-d*1.5)*.5;a+=step(d,.012)*.6;gl_FragColor=vec4(vec3(.24,.88,.77)*a,a);}' /* Calcula o brilho angular, a esteira e a linha mais intensa da varredura. */
+    }); /* Encerra a configuração do shader de varredura. */
+    const sweep = new THREE.Mesh(new THREE.CircleGeometry(R, 96), sweepMat); sweep.rotation.x = -Math.PI / 2; scene.add(sweep); /* Cria o disco da varredura no plano horizontal do radar. */
+
+    const pPos = new Float32Array(CAP * 3), pCol = new Float32Array(CAP * 3), pAl = new Float32Array(CAP), pSz = new Float32Array(CAP), sPos = new Float32Array(CAP * 6), sCol = new Float32Array(CAP * 6); /* Reserva buffers de posições, cores, opacidade, tamanho e hastes para até CAP pontos. */
+    const pg = new THREE.BufferGeometry(); /* Cria a geometria que agrupa os atributos dos pontos. */
+    [['position', pPos, 3], ['color', pCol, 3], ['aAl', pAl, 1], ['aSz', pSz, 1]].forEach(([n, a, s]) => pg.setAttribute(n, new THREE.BufferAttribute(a, s))); /* Registra na geometria os buffers e o número de componentes de cada atributo. */
+    const points = new THREE.Points(pg, new THREE.ShaderMaterial({ /* Cria o conjunto de pontos com um material customizado. */
+      transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, uniforms: { k: { value: renderer.getPixelRatio() } }, /* Configura os pontos brilhantes e fornece a escala de pixels ao shader. */
+      vertexShader: 'attribute vec3 color;attribute float aAl;attribute float aSz;varying vec3 c;varying float a;uniform float k;void main(){c=color;a=aAl;vec4 m=modelViewMatrix*vec4(position,1.);gl_PointSize=aSz*k*(180./-m.z);gl_Position=projectionMatrix*m;}', /* Define cor, opacidade e tamanho de cada ponto no shader de vértices. */
+      fragmentShader: 'varying vec3 c;varying float a;void main(){float d=length(gl_PointCoord-.5)*2.;if(d>1.)discard;float g=smoothstep(1.,.55,d);vec3 w=mix(c,vec3(1.),smoothstep(.5,.0,d)*.75);gl_FragColor=vec4(w*a*g,a*g);}' /* Recorta o ponto em círculo e suaviza seu brilho para formar um halo. */
+    })); /* Encerra a criação do conjunto de pontos. */
+    points.frustumCulled = false; scene.add(points); /* Desativa o descarte automático e insere os pontos na cena. */
+    const sg = new THREE.BufferGeometry(); sg.setAttribute('position', new THREE.BufferAttribute(sPos, 3)); sg.setAttribute('color', new THREE.BufferAttribute(sCol, 3)); /* Prepara os buffers de geometria e cor das hastes verticais. */
+    const stems = new THREE.LineSegments(sg, new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false })); stems.frustumCulled = false; scene.add(stems); /* Cria e adiciona as hastes luminosas que ligam os pontos ao plano. */
+
+    /* ---------- UI ---------- */
+    const active = () => items.filter(i => frac(i) < 1); /* Seleciona apenas os itens que ainda não ultrapassaram o prazo. */
+    function render() { /* Atualiza as listas HTML de itens ativos e itens que saíram do radar. */
+      const a = active().sort((x, y) => frac(y) - frac(x)), g = items.filter(i => frac(i) >= 1); /* Separa os estados e ordena os ativos do mais antigo ao mais recente. */
+      const row = (i, t) => { /* Monta uma linha acessível da lista para um item e seu rótulo de tempo. */
+        const d = document.createElement('div'); d.className = 'it' + (sel === i.id ? ' sel' : ''); d.tabIndex = 0; /* Cria a linha e marca visualmente o item selecionado. */
+        d.innerHTML = '<i></i><span></span><small></small>'; d.firstChild.style.background = CATS[i.cat].c; d.children[1].textContent = i.text; d.children[2].textContent = t; /* Preenche a cor, o texto do item e o prazo sem inserir texto como HTML. */
+        d.onclick = () => { sel = i.id; render(); showInfo() }; d.onkeydown = e => { if (e.key === 'Enter') d.click() }; return d /* Permite selecionar com clique ou Enter e devolve o elemento criado. */
+      }; /* Encerra a função que monta uma linha da lista. */
+      const L = $('list'), G = $('gone'); L.replaceChildren(); G.replaceChildren(); /* Obtém e limpa as listas para reconstruí-las com o estado atual. */
+      if (!a.length) L.innerHTML = '<div class="empty">Radar limpo. Adicione um item acima.</div>'; /* Mostra uma mensagem quando não há itens ativos. */
+      a.forEach(i => L.append(row(i, fmt((1 - frac(i)) * life)))); /* Renderiza itens ativos com o tempo restante formatado. */
+      if (!g.length) G.innerHTML = '<div class="empty">Nada saiu ainda.</div>'; /* Mostra uma mensagem quando nenhum item expirou. */
+      g.forEach(i => G.append(row(i, 'fora'))); /* Renderiza na lista de expirados cada item fora do radar. */
+      stamp() /* Ajusta quantos pontos e segmentos a geometria deve desenhar. */
+    } /* Encerra a atualização das listas. */
+    function stamp() { const a = active(); pg.setDrawRange(0, a.length); sg.setDrawRange(0, a.length * 2) } /* Limita o desenho aos pontos ativos e às duas extremidades de cada haste. */
+    function showInfo() { /* Atualiza o painel com detalhes e ações do item selecionado ou sob o cursor. */
+      const i = items.find(x => x.id === (hover || sel)); const box = $('info'); /* Localiza o item prioritário para exibição e o painel de detalhes. */
+      if (!i) { box.textContent = 'Passe o cursor ou toque em um ponto.'; return } /* Exibe a instrução padrão se nenhum item estiver em foco. */
+      const f = frac(i); box.replaceChildren(); const b = document.createElement('b'); b.textContent = i.text; box.append(b); /* Limpa o painel e mostra o texto do item com destaque. */
+      const p = document.createElement('div'); p.textContent = `${CATS[i.cat].n} · prioridade ${PRI[i.pri].toLowerCase()}`; box.append(p); /* Mostra categoria e prioridade do item. */
+      const q = document.createElement('div'); q.textContent = f < 1 ? `Criado há ${fmt(Date.now() - i.t0)} · sai em ${fmt((1 - f) * life)}` : 'Saiu do radar'; q.style.color = 'var(--dim)'; box.append(q); /* Exibe idade e tempo restante, ou indica que o item expirou. */
+      if (sel === i.id) { /* Só oferece ações quando o item está selecionado, não apenas sob o cursor. */
+        const r = document.createElement('div'); r.className = 'row'; /* Cria a linha que agrupa os botões de ação. */
+        [['Concluir', () => items = items.filter(x => x !== i)], [f < 1 ? 'Renovar' : 'Resgatar', () => i.t0 = Date.now()], ['Excluir', () => items = items.filter(x => x !== i)]].forEach(([t, fn], k) => { const bt = document.createElement('button'); bt.textContent = t; if (k === 0) bt.className = 'p'; bt.onclick = () => { fn(); if (!items.includes(i)) sel = null; save(); render(); showInfo() }; r.append(bt) }); box.append(r) /* Cria os botões para remover, renovar ou resgatar e associa cada ação ao estado. */
+      } /* Encerra a criação condicional dos controles. */
+    } /* Encerra a atualização do painel de detalhes. */
+    function add() { const t = $('txt').value.trim(); if (!t) { $('txt').focus(); return } items.push(mk(t, +$('cat').value, +$('pri').value, 0)); $('txt').value = ''; sel = items[items.length - 1].id; save(); render(); showInfo() } /* Valida o texto, cria e seleciona um item e atualiza armazenamento e interface. */
+    $('add').onclick = add; $('txt').onkeydown = e => { if (e.key === 'Enter') add() }; /* Liga o botão Adicionar e a tecla Enter à criação de itens. */
+    $('life').onchange = e => { life = +e.target.value; save(); render() }; /* Atualiza o prazo selecionado, persiste-o e redesenha a lista. */
+
+    let drag = null, moved = 0; /* Rastreia o gesto atual e a distância movida para distinguir arrasto de clique. */
+    canvas.addEventListener('pointerdown', e => { drag = { x: e.clientX, y: e.clientY }; moved = 0; canvas.setPointerCapture(e.pointerId) }); /* Inicia o gesto e captura o ponteiro para continuar recebendo movimento. */
+    canvas.addEventListener('pointerup', e => { drag = null; if (moved < 5) { const h = nearest(e); sel = h ? h.id : null; hover = null; render(); showInfo() } }); /* Se o gesto foi clique, seleciona o ponto mais próximo e atualiza a interface. */
+    canvas.addEventListener('pointermove', e => { /* Usa movimentos para orbitar a câmera ou detectar o ponto sob o cursor. */
+      if (drag) { moved += Math.abs(e.clientX - drag.x) + Math.abs(e.clientY - drag.y); th -= (e.clientX - drag.x) * .006; ph = Math.max(.15, Math.min(1.5, ph - (e.clientY - drag.y) * .006)); drag = { x: e.clientX, y: e.clientY }; placeCam(); return } /* Durante o arrasto, atualiza os ângulos, limita a inclinação e reposiciona a câmera. */
+      const h = nearest(e); const id = h ? h.id : null; if (id !== hover) { hover = id; showInfo() } /* Fora do arrasto, atualiza os detalhes apenas quando muda o ponto sob o cursor. */
+    }); /* Encerra o tratamento do movimento do ponteiro. */
+    canvas.addEventListener('wheel', e => { e.preventDefault(); dist = Math.max(12, Math.min(50, dist + e.deltaY * .02)); placeCam() }, { passive: false }); /* Evita a rolagem da página e limita o zoom da câmera entre 12 e 50 unidades. */
+    function pos(i) { const f = Math.min(frac(i), 1), r = (.06 + .94 * f) * R, b = ((i.cat * 90 + 45) + jit(i.id) * 70) * Math.PI / 180; return [r * Math.sin(b), -(.3 + i.pri * 1.2) * DS / 3 * 1.4, -r * Math.cos(b), b] } /* Calcula posição 3D: idade controla o raio, categoria o setor e prioridade a altura. */
+    function nearest(e) { let best = null, bd = 18; const v = new THREE.Vector3(); active().forEach(i => { const p = pos(i); v.set(p[0], p[1], p[2]).project(camera); const d = Math.hypot((v.x + 1) / 2 * innerWidth - e.clientX, (1 - v.y) / 2 * innerHeight - e.clientY); if (d < bd) { bd = d; best = i } }); return best } /* Projeta os itens ativos na tela e retorna o mais próximo dentro de 18 pixels. */
+
+    /* ---------- loop ---------- */
+    let ang = 0, last = performance.now(), tick = 0, nAct = -1; /* Guarda ângulo da varredura, instante anterior, temporizador da lista e quantidade ativa. */
+    const warm = new THREE.Color('#ff6b5b'), tmp = new THREE.Color(); /* Prepara a cor de alerta e um objeto de cor reutilizável no loop. */
+    function frame(now) { /* Atualiza a animação e renderiza um quadro da cena. */
+      const dt = Math.min((now - last) / 1000, .1); last = now; ang = (ang + dt * 1.1) % TAU; sweepMat.uniforms.uA.value = ang; /* Calcula o tempo do quadro e avança o ângulo da varredura. */
+      const a = active(); /* Obtém a lista atual de itens que ainda estão dentro do radar. */
+      if (a.length !== nAct) { nAct = a.length; render(); showInfo() } /* Atualiza listas e detalhes quando algum item entra ou sai do radar. */
+      if ((tick += dt) > 10) { tick = 0; render(); showInfo() } /* Atualiza os tempos exibidos periodicamente, mesmo sem mudança na quantidade. */
+      a.forEach((i, k) => { /* Atualiza atributos gráficos de cada ponto ativo. */
+        const f = frac(i), p = pos(i), d = ((ang - p[3]) % TAU + TAU) % TAU, s = Math.exp(-d * .75), al = (.65 + .35 * s) * (f > .85 ? .7 + .3 * Math.sin(now / 180) : 1); /* Calcula idade, posição, proximidade da varredura e opacidade com alerta ao expirar. */
+        tmp.set(CATS[i.cat].c).lerp(warm, Math.max(0, (f - .7) / .3) * .8); /* Mistura a cor da categoria com vermelho quando o prazo está próximo. */
+        pPos.set([p[0], p[1], p[2]], k * 3); pCol.set([tmp.r, tmp.g, tmp.b], k * 3); pAl[k] = al; pSz[k] = ((i.id === hover || i.id === sel) ? 1.9 : 1) * (1.4 + 1.2 * s); /* Atualiza posição, cor, opacidade e tamanho do ponto nos buffers. */
+        const m = al * .9; sPos.set([p[0], 0, p[2], p[0], p[1], p[2]], k * 6); sCol.set([tmp.r * m, tmp.g * m, tmp.b * m, tmp.r * m * .2, tmp.g * m * .2, tmp.b * m * .2], k * 6) /* Atualiza a haste vertical com cor e transparência em gradiente. */
+      }); /* Encerra a atualização dos atributos de cada item ativo. */
+      ['position', 'color', 'aAl', 'aSz'].forEach(n => pg.attributes[n].needsUpdate = true); sg.attributes.position.needsUpdate = sg.attributes.color.needsUpdate = true; /* Marca os buffers alterados para envio à GPU. */
+      renderer.render(scene, camera); requestAnimationFrame(frame) /* Desenha a cena e agenda o próximo quadro da animação. */
+    } /* Encerra a função que produz cada quadro. */
+    render(); showInfo(); requestAnimationFrame(frame); /* Renderiza a interface inicial e inicia o loop de animação. */
+  </script>
+</body>
+
+</html>
