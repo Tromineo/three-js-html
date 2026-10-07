@@ -1,3 +1,10 @@
+<?php
+if($_GET['key'] !== 'radar123') {
+  http_response_code(403);
+  echo 'Acesso negado.';
+  exit;
+}
+?>
 <!DOCTYPE html>
 <html lang="pt-BR">
 
@@ -43,6 +50,7 @@
       top: max(12px, env(safe-area-inset-top, 0px));
       left: 12px;
       width: min(330px, calc(100vw - 24px));
+      box-sizing: border-box;
       max-height: calc(100% - 24px);
       overflow: auto;
       background: var(--panel);
@@ -173,6 +181,11 @@
       right: 12px;
       bottom: max(12px, env(safe-area-inset-bottom, 0px));
       width: min(260px, calc(100vw - 24px));
+      box-sizing: border-box;
+      max-height: calc(100vh - 24px);
+      max-height: calc(100dvh - 24px);
+      overflow-y: auto;
+      overscroll-behavior: contain;
       background: var(--panel);
       border: 1px solid var(--line);
       border-radius: 6px;
@@ -197,9 +210,41 @@
       }
 
       #info {
-        bottom: auto;
         top: calc(52% + 8px);
-        right: 12px
+        left: 12px;
+        right: 12px;
+        width: auto;
+        bottom: auto;
+        max-height: calc(48% - 20px)
+      }
+    }
+
+    @media(max-height:420px) {
+      #panel {
+        max-height: 38%
+      }
+
+      #info {
+        top: calc(42% + 8px);
+        bottom: max(12px, env(safe-area-inset-bottom, 0px));
+        max-height: none;
+        padding: 4px 6px;
+        font-size: 10px
+      }
+
+      #info b {
+        font: 600 12px/1.1 Georgia, serif;
+        margin-bottom: 0
+      }
+
+      #info .row {
+        gap: 3px;
+        margin-top: 2px
+      }
+
+      #info .row button {
+        padding: 2px 3px;
+        font-size: 10px
       }
     }
   </style>
@@ -248,144 +293,185 @@
      * buffers reutilizaveis e um loop de animacao atualizam pontos e varredura sem reconstruir a cena.
      * As funcoes ficam separadas por responsabilidade: estado, cena, interface, interacao e animacao.
      */
-    const raio = 10, escala = 3, capacidade = 300, volta_completa = Math.PI * 2, KEY = 'radar-ideias-v1'; /* Define o raio, a escala vertical, a capacidade visual, uma volta completa e a chave de persistência. */
+    const RAIO_RADAR = 10, ESCALA_VERTICAL = 3, CAPACIDADE_PONTOS = 300, VOLTA_COMPLETA_RAD = Math.PI * 2, CHAVE_ARMAZENAMENTO = 'radar-ideias-v1'; /* Define dimensões da cena, capacidade dos buffers, volta angular e chave de persistência. */
     /* Declara as categorias do radar e a cor de cada uma. */
     const CATEGORIAS = [
-      { n: 'Ideias', c: '#ffb347' }, 
-      { n: 'Trabalho', c: '#6fc3ff' }, 
-      { n: 'Pessoal', c: '#5ee6a8' }, 
-      { n: 'Estudos', c: '#c79bff' }
+      { nome: 'Ideias', cor: '#ffb347' },
+      { nome: 'Trabalho', cor: '#6fc3ff' },
+      { nome: 'Pessoal', cor: '#5ee6a8' },
+      { nome: 'Estudos', cor: '#c79bff' }
     ]; 
     const PRIORIDADES = ['Alta', 'Média', 'Baixa']; /* Associa os índices numéricos de prioridade aos rótulos mostrados na interface. */
-    const $ = id => document.getElementById(id); /* Cria um atalho para localizar elementos HTML pelo id. */
-    $('cat').innerHTML = CATEGORIAS.map((c, i) => `<option value="${i}">${c.n}</option>`).join(''); /* Cria as opções do seletor de categorias. */
+    const elementoPorId = idElemento => document.getElementById(idElemento); /* Localiza elementos HTML pelo id. */
+    elementoPorId('cat').innerHTML = CATEGORIAS.map((categoria, indiceCategoria) => `<option value="${indiceCategoria}">${categoria.nome}</option>`).join(''); /* Cria as opções do seletor de categorias. */
 
     /* ---------- estado ---------- */
-    let items = [], life = 604800000, sel = null, hover = null; /* Mantém os itens, o prazo de vida e os ids selecionado e sob o cursor. */
-    function save() { /* Persiste no navegador o estado atual do radar. */
+    let itensRadar = [], prazoSaidaMs = 604800000, idSelecionado = null, idSobCursor = null; /* Mantém os itens, o prazo e os ids selecionado e sob o cursor. */
+    function salvarEstado() { /* Persiste no navegador o estado atual do radar. */
       try { /* Tenta gravar sem interromper a aplicação se o armazenamento estiver indisponível. */
-        localStorage.setItem(KEY, JSON.stringify({ items, life })) /* Serializa os itens e o prazo na chave definida acima. */
+        localStorage.setItem(CHAVE_ARMAZENAMENTO, JSON.stringify({ items: itensRadar, life: prazoSaidaMs })) /* Mantém as chaves salvas compatíveis com versões anteriores. */
       } catch (e) { /* Ignora erros de armazenamento, como quota cheia ou acesso bloqueado. */
       } /* Encerra o tratamento de erro da gravação. */
     } /* Encerra a função de persistência. */
-    function load() { /* Recupera do navegador os itens e o prazo previamente gravados. */
+    function carregarEstado() { /* Recupera do navegador os itens e o prazo previamente gravados. */
       try { /* Protege o carregamento contra dados inválidos ou armazenamento inacessível. */
-        const s = JSON.parse(localStorage.getItem(KEY)); /* Lê e converte o conteúdo salvo em objeto JavaScript. */
-        if (s && Array.isArray(s.items)) { /* Aceita o conteúdo somente se houver uma lista de itens válida. */
-          items = s.items; /* Restaura os itens do radar. */
-          life = s.life || life; /* Restaura o prazo ou mantém o padrão se ele estiver ausente. */
+        const estadoSalvo = JSON.parse(localStorage.getItem(CHAVE_ARMAZENAMENTO)); /* Lê e converte o conteúdo salvo em objeto JavaScript. */
+        if (estadoSalvo && Array.isArray(estadoSalvo.items)) { /* Aceita o conteúdo somente se houver uma lista de itens válida. */
+          itensRadar = estadoSalvo.items; /* Restaura os itens do radar. */
+          prazoSaidaMs = estadoSalvo.life || prazoSaidaMs; /* Restaura o prazo ou mantém o padrão se ele estiver ausente. */
           return true; /* Informa que o estado foi carregado. */
         } /* Encerra a validação do estado carregado. */
       } catch (e) { /* Trata JSON corrompido ou falha na leitura sem interromper a inicialização. */
       } /* Encerra o tratamento de erro do carregamento. */
       return false; /* Informa que não foi possível recuperar um estado utilizável. */
     } /* Encerra a função de carregamento. */
-    const uid = () => Math.random().toString(36).slice(2, 9); /* Gera um identificador curto aleatório para cada item. */
-    const jit = id => { let h = 0; for (const ch of id) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return (h % 1000) / 1000 - .5 }; /* Deriva do id um pequeno deslocamento estável para separar pontos visualmente. */
-    function mk(text, cat, pri, ageFrac) { const id = uid(); return { id, text, cat, pri, t0: Date.now() - ageFrac * life } } /* Cria um item com id e instante inicial compatível com sua idade simulada. */
-    if (!load()) { items = [mk('Escrever o artigo sobre sonares', 0, 1, .05), mk('Enviar proposta ao cliente', 1, 0, .3), mk('Marcar consulta médica', 2, 0, .55), mk('Estudar WebGL shaders', 3, 2, .7), mk('Ideia de app de receitas', 0, 2, .85), mk('Renovar passaporte', 2, 1, .15)]; save() } /* Se não há estado salvo, cria exemplos demonstrativos e grava-os. */
-    $('life').value = String(life); /* Sincroniza o seletor de prazo com o valor carregado. */
-    const frac = it => (Date.now() - it.t0) / life; /* Calcula a fração do prazo já transcorrida para um item. */
-    const fmt = ms => { const m = Math.max(0, ms) / 60000; if (m < 1) return Math.round(m * 60) + 's'; if (m < 60) return Math.round(m) + ' min'; if (m < 1440) return (m / 60).toFixed(1) + ' h'; return (m / 1440).toFixed(1) + ' d' }; /* Formata milissegundos como segundos, minutos, horas ou dias. */
+    const gerarIdItem = () => Math.random().toString(36).slice(2, 9); /* Gera um identificador curto aleatório para cada item. */
+    const deslocamentoAngularPorId = idItem => { let hashAtual = 0; for (const caractereId of idItem) hashAtual = (hashAtual * 31 + caractereId.charCodeAt(0)) >>> 0; return (hashAtual % 1000) / 1000 - .5 }; /* Deriva do id um pequeno deslocamento estável para separar pontos visualmente. */
+    function criarItem(textoItem, indiceCategoria, indicePrioridade, fracaoIdade) { 
+      const idItem = gerarIdItem(); 
+      return { 
+        id: idItem, 
+        text: textoItem, 
+        cat: indiceCategoria, 
+        pri: indicePrioridade, 
+        t0: Date.now() - fracaoIdade * prazoSaidaMs 
+      } 
+    }
+     /* Cria um item com id e instante inicial compatível com sua idade simulada. */
+    if (!carregarEstado()) { 
+      itensRadar = [
+        criarItem('Escrever o artigo sobre sonares', 0, 1, .05), 
+        criarItem('Enviar proposta ao cliente', 1, 0, .3), 
+        criarItem('Marcar consulta médica', 2, 0, .55), 
+        criarItem('Estudar WebGL shaders', 3, 2, .7), 
+        criarItem('Ideia de app de receitas', 0, 2, .85), 
+        criarItem('Renovar passaporte', 2, 1, .15)
+      ]; 
+      salvarEstado() 
+    } 
+    /* Se não há estado salvo, cria exemplos demonstrativos e grava-os. */
+    elementoPorId('life').value = String(prazoSaidaMs); 
+    /* Sincroniza o seletor de prazo com o valor carregado. */
+    const fracaoPrazoDecorrido = itemRadar => (Date.now() - itemRadar.t0) / prazoSaidaMs; /* Calcula a fração do prazo já transcorrida para um item. */
+    const formatarDuracao = duracaoMs => { 
+      const minutos = Math.max(0, duracaoMs) / 60000; 
+      if (minutos < 1) return Math.round(minutos * 60) + 's'; 
+      if (minutos < 60) return Math.round(minutos) + ' min'; 
+      if (minutos < 1440) return (minutos / 60).toFixed(1) + ' h'; 
+      return (minutos / 1440).toFixed(1) + ' d' 
+    }; 
+    /* Formata milissegundos como segundos, minutos, horas ou dias. */
 
     /* ---------- cena ---------- */
-    const canvas = $('c'), renderer = new THREE.WebGLRenderer({ canvas, antialias: true }); /* Inicializa o renderizador WebGL ligado ao canvas da página. */
-    renderer.setPixelRatio(Math.min(devicePixelRatio, 2)); /* Limita a densidade de pixels para equilibrar nitidez e desempenho. */
-    const scene = new THREE.Scene(), camera = new THREE.PerspectiveCamera(45, 1, .1, 200); /* Cria a cena 3D e a câmera em perspectiva. */
-    let th = .5, ph = 1, dist = 26; /* Guarda ângulos e distância usados para orbitar a câmera. */
-    const placeCam = () => { camera.position.set(dist * Math.sin(ph) * Math.sin(th), dist * Math.cos(ph), dist * Math.sin(ph) * Math.cos(th)); camera.lookAt(0, -1, 0) }; /* Posiciona a câmera em coordenadas esféricas e mira no centro do radar. */
-    const resize = () => { renderer.setSize(innerWidth, innerHeight, false); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix() }; /* Redimensiona a renderização e atualiza a proporção da câmera. */
-    addEventListener('resize', resize); resize(); placeCam(); /* Configura o redimensionamento e posiciona inicialmente a câmera. */
-    const lm = new THREE.LineBasicMaterial({ color: 0x14485a }); /* Define o material das linhas da grade do radar. */
-    const line = (a, b) => scene.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([a, b]), lm)); /* Cria e adiciona à cena uma linha entre dois pontos. */
-    for (let i = 1; i <= 5; i++) { const p = []; for (let a = 0; a <= 128; a++)p.push(new THREE.Vector3(Math.sin(a / 128 * TAU) * R * i / 5, 0, -Math.cos(a / 128 * TAU) * R * i / 5)); scene.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(p), lm)) } /* Desenha cinco anéis concêntricos amostrando cada círculo em 128 segmentos. */
-    for (let a = 0; a < 4; a++) { const t = a / 4 * TAU; line(new THREE.Vector3(), new THREE.Vector3(Math.sin(t) * R, 0, -Math.cos(t) * R)) } /* Desenha quatro raios que dividem o radar em setores de categoria. */
-    const own = new THREE.Mesh(new THREE.SphereGeometry(.18, 16, 12), new THREE.MeshBasicMaterial({ color: 0xcfeee8 })); scene.add(own); /* Marca o centro do radar com uma pequena esfera clara. */
-    CATEGORIAS.forEach((c, i) => { /* Cria uma etiqueta visual para cada setor do radar. */
-      const cv = document.createElement('canvas'); cv.width = 256; cv.height = 64; const g = cv.getContext('2d'); g.font = '600 34px Georgia,serif'; g.fillStyle = c.c; g.textAlign = 'center'; g.fillText(c.n, 128, 44); /* Desenha o nome da categoria em um canvas usado como textura. */
-      const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(cv), transparent: true, depthTest: false, fog: false })); /* Converte o texto em sprite sempre legível sobre a cena. */
-      const t = (i * 90 + 45) * Math.PI / 180; s.position.set(Math.sin(t) * R * 1.12, 0, -Math.cos(t) * R * 1.12); s.scale.set(4, 1, 1); scene.add(s) /* Posiciona a etiqueta no meio do setor correspondente e a adiciona à cena. */
+    const canvasRadar = elementoPorId('c'), renderizadorWebGL = new THREE.WebGLRenderer({ canvas: canvasRadar, antialias: true }); /* Inicializa o renderizador WebGL ligado ao canvas da página. */
+    renderizadorWebGL.setPixelRatio(Math.min(devicePixelRatio, 2)); /* Limita a densidade de pixels para equilibrar nitidez e desempenho. */
+    const cenaRadar = new THREE.Scene(), cameraRadar = new THREE.PerspectiveCamera(45, 1, .1, 200); /* Cria a cena 3D e a câmera em perspectiva. */
+    let anguloHorizontal = .5, anguloVertical = 1, distanciaCamera = 26; /* Guarda ângulos e distância usados para orbitar a câmera. */
+    const posicionarCamera = () => { 
+      cameraRadar.position.set(distanciaCamera * Math.sin(anguloVertical) * Math.sin(anguloHorizontal), distanciaCamera * Math.cos(anguloVertical), distanciaCamera * Math.sin(anguloVertical) * Math.cos(anguloHorizontal)); cameraRadar.lookAt(0, -1, 0) 
+    }; 
+    /* Posiciona a câmera em coordenadas esféricas e mira no centro do radar. */
+    const redimensionarCena = () => { 
+      renderizadorWebGL.setSize(innerWidth, innerHeight, false); cameraRadar.aspect = innerWidth / innerHeight; cameraRadar.updateProjectionMatrix() 
+    }; /* Redimensiona a renderização e atualiza a proporção da câmera. */
+    addEventListener('resize', redimensionarCena); redimensionarCena(); posicionarCamera(); /* Configura o redimensionamento e posiciona inicialmente a câmera. */
+    const materialLinhas = new THREE.LineBasicMaterial({ color: 0x14485a }); /* Define o material das linhas da grade do radar. */
+    const adicionarLinha = (pontoInicial, pontoFinal) => cenaRadar.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([pontoInicial, pontoFinal]), materialLinhas)); /* Cria e adiciona à cena uma linha entre dois pontos. */
+    for (let indiceAnel = 1; indiceAnel <= 5; indiceAnel++) { const pontosAnel = []; for (let indiceSegmento = 0; indiceSegmento <= 128; indiceSegmento++)pontosAnel.push(new THREE.Vector3(Math.sin(indiceSegmento / 128 * VOLTA_COMPLETA_RAD) * RAIO_RADAR * indiceAnel / 5, 0, -Math.cos(indiceSegmento / 128 * VOLTA_COMPLETA_RAD) * RAIO_RADAR * indiceAnel / 5)); cenaRadar.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pontosAnel), materialLinhas)) } /* Desenha cinco anéis concêntricos amostrando cada círculo em 128 segmentos. */
+
+    for (let indiceRaio = 0; indiceRaio < 4; indiceRaio++) { const anguloRaio = indiceRaio / 4 * VOLTA_COMPLETA_RAD; adicionarLinha(new THREE.Vector3(), new THREE.Vector3(Math.sin(anguloRaio) * RAIO_RADAR, 0, -Math.cos(anguloRaio) * RAIO_RADAR)) } /* Desenha quatro raios que dividem o radar em setores de categoria. */
+
+    const marcadorCentro = new THREE.Mesh(new THREE.SphereGeometry(.18, 16, 12), new THREE.MeshBasicMaterial({ color: 0xcfeee8 })); 
+    cenaRadar.add(marcadorCentro); /* Marca o centro do radar com uma pequena esfera clara. */
+    CATEGORIAS.forEach((categoria, indiceCategoria) => { /* Cria uma etiqueta visual para cada setor do radar. */
+      const canvasEtiqueta = document.createElement('canvas'); canvasEtiqueta.width = 256; canvasEtiqueta.height = 64; const contextoEtiqueta = canvasEtiqueta.getContext('2d'); contextoEtiqueta.font = '600 34px Georgia,serif'; contextoEtiqueta.fillStyle = categoria.cor; contextoEtiqueta.textAlign = 'center'; contextoEtiqueta.fillText(categoria.nome, 128, 44); /* Desenha o nome da categoria em um canvas usado como textura. */
+      
+      const spriteCategoria = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(canvasEtiqueta), transparent: true, depthTest: false, fog: false })); /* Converte o texto em sprite sempre legível sobre a cena. */
+      
+      const anguloEtiqueta = (indiceCategoria * 90 + 45) * Math.PI / 180; spriteCategoria.position.set(Math.sin(anguloEtiqueta) * RAIO_RADAR * 1.12, 0, -Math.cos(anguloEtiqueta) * RAIO_RADAR * 1.12); spriteCategoria.scale.set(4, 1, 1); cenaRadar.add(spriteCategoria) /* Posiciona a etiqueta no meio do setor correspondente e a adiciona à cena. */
     }); /* Encerra a criação das etiquetas das categorias. */
-    const sweepMat = new THREE.ShaderMaterial({ /* Define o material GLSL da varredura luminosa do radar. */
+    
+    const materialVarredura = new THREE.ShaderMaterial({ /* Define o material GLSL da varredura luminosa do radar. */
       transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, uniforms: { uA: { value: 0 } }, /* Configura transparência, brilho aditivo e ângulo variável da varredura. */
       vertexShader: 'varying vec2 p;void main(){p=position.xy;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}', /* Passa coordenadas locais do disco ao shader de fragmentos e projeta os vértices. */
       fragmentShader: 'uniform float uA;varying vec2 p;void main(){float b=atan(p.x,p.y);float d=mod(uA-b,6.2831853);float a=exp(-d*1.5)*.5;a+=step(d,.012)*.6;gl_FragColor=vec4(vec3(.24,.88,.77)*a,a);}' /* Calcula o brilho angular, a esteira e a linha mais intensa da varredura. */
     }); /* Encerra a configuração do shader de varredura. */
-    const sweep = new THREE.Mesh(new THREE.CircleGeometry(R, 96), sweepMat); sweep.rotation.x = -Math.PI / 2; scene.add(sweep); /* Cria o disco da varredura no plano horizontal do radar. */
+    
+    const planoVarredura = new THREE.Mesh(new THREE.CircleGeometry(RAIO_RADAR, 96), materialVarredura); planoVarredura.rotation.x = -Math.PI / 2; cenaRadar.add(planoVarredura); /* Cria o disco da varredura no plano horizontal do radar. */
 
-    const pPos = new Float32Array(CAP * 3), pCol = new Float32Array(CAP * 3), pAl = new Float32Array(CAP), pSz = new Float32Array(CAP), sPos = new Float32Array(CAP * 6), sCol = new Float32Array(CAP * 6); /* Reserva buffers de posições, cores, opacidade, tamanho e hastes para até CAP pontos. */
-    const pg = new THREE.BufferGeometry(); /* Cria a geometria que agrupa os atributos dos pontos. */
-    [['position', pPos, 3], ['color', pCol, 3], ['aAl', pAl, 1], ['aSz', pSz, 1]].forEach(([n, a, s]) => pg.setAttribute(n, new THREE.BufferAttribute(a, s))); /* Registra na geometria os buffers e o número de componentes de cada atributo. */
-    const points = new THREE.Points(pg, new THREE.ShaderMaterial({ /* Cria o conjunto de pontos com um material customizado. */
-      transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, uniforms: { k: { value: renderer.getPixelRatio() } }, /* Configura os pontos brilhantes e fornece a escala de pixels ao shader. */
+    const posicoesPontos = new Float32Array(CAPACIDADE_PONTOS * 3), coresPontos = new Float32Array(CAPACIDADE_PONTOS * 3), opacidadesPontos = new Float32Array(CAPACIDADE_PONTOS), tamanhosPontos = new Float32Array(CAPACIDADE_PONTOS), posicoesHastes = new Float32Array(CAPACIDADE_PONTOS * 6), coresHastes = new Float32Array(CAPACIDADE_PONTOS * 6); /* Reserva buffers de posições, cores, opacidade, tamanho e hastes para até CAPACIDADE_PONTOS pontos. */
+    const geometriaPontos = new THREE.BufferGeometry(); /* Cria a geometria que agrupa os atributos dos pontos. */
+    [['position', posicoesPontos, 3], ['color', coresPontos, 3], ['aAl', opacidadesPontos, 1], ['aSz', tamanhosPontos, 1]].forEach(([nomeAtributo, bufferAtributo, quantidadeComponentes]) => geometriaPontos.setAttribute(nomeAtributo, new THREE.BufferAttribute(bufferAtributo, quantidadeComponentes))); /* Registra na geometria os buffers e o número de componentes de cada atributo. */
+    const nuvemPontos = new THREE.Points(geometriaPontos, new THREE.ShaderMaterial({ /* Cria o conjunto de pontos com um material customizado. */
+      transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, uniforms: { k: { value: renderizadorWebGL.getPixelRatio() } }, /* Configura os pontos brilhantes e fornece a escala de pixels ao shader. */
       vertexShader: 'attribute vec3 color;attribute float aAl;attribute float aSz;varying vec3 c;varying float a;uniform float k;void main(){c=color;a=aAl;vec4 m=modelViewMatrix*vec4(position,1.);gl_PointSize=aSz*k*(180./-m.z);gl_Position=projectionMatrix*m;}', /* Define cor, opacidade e tamanho de cada ponto no shader de vértices. */
       fragmentShader: 'varying vec3 c;varying float a;void main(){float d=length(gl_PointCoord-.5)*2.;if(d>1.)discard;float g=smoothstep(1.,.55,d);vec3 w=mix(c,vec3(1.),smoothstep(.5,.0,d)*.75);gl_FragColor=vec4(w*a*g,a*g);}' /* Recorta o ponto em círculo e suaviza seu brilho para formar um halo. */
     })); /* Encerra a criação do conjunto de pontos. */
-    points.frustumCulled = false; scene.add(points); /* Desativa o descarte automático e insere os pontos na cena. */
-    const sg = new THREE.BufferGeometry(); sg.setAttribute('position', new THREE.BufferAttribute(sPos, 3)); sg.setAttribute('color', new THREE.BufferAttribute(sCol, 3)); /* Prepara os buffers de geometria e cor das hastes verticais. */
-    const stems = new THREE.LineSegments(sg, new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false })); stems.frustumCulled = false; scene.add(stems); /* Cria e adiciona as hastes luminosas que ligam os pontos ao plano. */
+    nuvemPontos.frustumCulled = false; cenaRadar.add(nuvemPontos); /* Desativa o descarte automático e insere os pontos na cena. */
+    const geometriaHastes = new THREE.BufferGeometry(); geometriaHastes.setAttribute('position', new THREE.BufferAttribute(posicoesHastes, 3)); geometriaHastes.setAttribute('color', new THREE.BufferAttribute(coresHastes, 3)); /* Prepara os buffers de geometria e cor das hastes verticais. */
+    const hastesPontos = new THREE.LineSegments(geometriaHastes, new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false })); hastesPontos.frustumCulled = false; cenaRadar.add(hastesPontos); /* Cria e adiciona as hastes luminosas que ligam os pontos ao plano. */
 
     /* ---------- UI ---------- */
-    const active = () => items.filter(i => frac(i) < 1); /* Seleciona apenas os itens que ainda não ultrapassaram o prazo. */
-    function render() { /* Atualiza as listas HTML de itens ativos e itens que saíram do radar. */
-      const a = active().sort((x, y) => frac(y) - frac(x)), g = items.filter(i => frac(i) >= 1); /* Separa os estados e ordena os ativos do mais antigo ao mais recente. */
-      const row = (i, t) => { /* Monta uma linha acessível da lista para um item e seu rótulo de tempo. */
-        const d = document.createElement('div'); d.className = 'it' + (sel === i.id ? ' sel' : ''); d.tabIndex = 0; /* Cria a linha e marca visualmente o item selecionado. */
-        d.innerHTML = '<i></i><span></span><small></small>'; d.firstChild.style.background = CATS[i.cat].c; d.children[1].textContent = i.text; d.children[2].textContent = t; /* Preenche a cor, o texto do item e o prazo sem inserir texto como HTML. */
-        d.onclick = () => { sel = i.id; render(); showInfo() }; d.onkeydown = e => { if (e.key === 'Enter') d.click() }; return d /* Permite selecionar com clique ou Enter e devolve o elemento criado. */
+    const obterItensAtivos = () => itensRadar.filter(itemRadar => fracaoPrazoDecorrido(itemRadar) < 1); /* Seleciona apenas os itens que ainda não ultrapassaram o prazo. */
+    function renderizarListas() { /* Atualiza as listas HTML de itens ativos e itens que saíram do radar. */
+      const itensAtivos = obterItensAtivos().sort((itemA, itemB) => fracaoPrazoDecorrido(itemB) - fracaoPrazoDecorrido(itemA)), itensExpirados = itensRadar.filter(itemRadar => fracaoPrazoDecorrido(itemRadar) >= 1); /* Separa os estados e ordena os ativos do mais antigo ao mais recente. */
+      const criarLinhaItem = (itemRadar, textoPrazo) => { /* Monta uma linha acessível da lista para um item e seu rótulo de tempo. */
+        const elementoLinha = document.createElement('div'); elementoLinha.className = 'it' + (idSelecionado === itemRadar.id ? ' sel' : ''); elementoLinha.tabIndex = 0; /* Cria a linha e marca visualmente o item selecionado. */
+        elementoLinha.innerHTML = '<i></i><span></span><small></small>'; elementoLinha.firstChild.style.background = CATEGORIAS[itemRadar.cat].cor; elementoLinha.children[1].textContent = itemRadar.text; elementoLinha.children[2].textContent = textoPrazo; /* Preenche a cor, o texto do item e o prazo sem inserir texto como HTML. */
+        elementoLinha.onclick = () => { idSelecionado = itemRadar.id; renderizarListas(); mostrarInformacoes() }; elementoLinha.onkeydown = eventoTeclado => { if (eventoTeclado.key === 'Enter') elementoLinha.click() }; return elementoLinha /* Permite selecionar com clique ou Enter e devolve o elemento criado. */
       }; /* Encerra a função que monta uma linha da lista. */
-      const L = $('list'), G = $('gone'); L.replaceChildren(); G.replaceChildren(); /* Obtém e limpa as listas para reconstruí-las com o estado atual. */
-      if (!a.length) L.innerHTML = '<div class="empty">Radar limpo. Adicione um item acima.</div>'; /* Mostra uma mensagem quando não há itens ativos. */
-      a.forEach(i => L.append(row(i, fmt((1 - frac(i)) * life)))); /* Renderiza itens ativos com o tempo restante formatado. */
-      if (!g.length) G.innerHTML = '<div class="empty">Nada saiu ainda.</div>'; /* Mostra uma mensagem quando nenhum item expirou. */
-      g.forEach(i => G.append(row(i, 'fora'))); /* Renderiza na lista de expirados cada item fora do radar. */
-      stamp() /* Ajusta quantos pontos e segmentos a geometria deve desenhar. */
+      const listaAtivos = elementoPorId('list'), listaExpirados = elementoPorId('gone'); listaAtivos.replaceChildren(); listaExpirados.replaceChildren(); /* Obtém e limpa as listas para reconstruí-las com o estado atual. */
+      if (!itensAtivos.length) listaAtivos.innerHTML = '<div class="empty">Radar limpo. Adicione um item acima.</div>'; /* Mostra uma mensagem quando não há itens ativos. */
+      itensAtivos.forEach(itemRadar => listaAtivos.append(criarLinhaItem(itemRadar, formatarDuracao((1 - fracaoPrazoDecorrido(itemRadar)) * prazoSaidaMs)))); /* Renderiza itens ativos com o tempo restante formatado. */
+      if (!itensExpirados.length) listaExpirados.innerHTML = '<div class="empty">Nada saiu ainda.</div>'; /* Mostra uma mensagem quando nenhum item expirou. */
+      itensExpirados.forEach(itemRadar => listaExpirados.append(criarLinhaItem(itemRadar, 'fora'))); /* Renderiza na lista de expirados cada item fora do radar. */
+      atualizarFaixaDesenho() /* Ajusta quantos pontos e segmentos a geometria deve desenhar. */
     } /* Encerra a atualização das listas. */
-    function stamp() { const a = active(); pg.setDrawRange(0, a.length); sg.setDrawRange(0, a.length * 2) } /* Limita o desenho aos pontos ativos e às duas extremidades de cada haste. */
-    function showInfo() { /* Atualiza o painel com detalhes e ações do item selecionado ou sob o cursor. */
-      const i = items.find(x => x.id === (hover || sel)); const box = $('info'); /* Localiza o item prioritário para exibição e o painel de detalhes. */
-      if (!i) { box.textContent = 'Passe o cursor ou toque em um ponto.'; return } /* Exibe a instrução padrão se nenhum item estiver em foco. */
-      const f = frac(i); box.replaceChildren(); const b = document.createElement('b'); b.textContent = i.text; box.append(b); /* Limpa o painel e mostra o texto do item com destaque. */
-      const p = document.createElement('div'); p.textContent = `${CATS[i.cat].n} · prioridade ${PRI[i.pri].toLowerCase()}`; box.append(p); /* Mostra categoria e prioridade do item. */
-      const q = document.createElement('div'); q.textContent = f < 1 ? `Criado há ${fmt(Date.now() - i.t0)} · sai em ${fmt((1 - f) * life)}` : 'Saiu do radar'; q.style.color = 'var(--dim)'; box.append(q); /* Exibe idade e tempo restante, ou indica que o item expirou. */
-      if (sel === i.id) { /* Só oferece ações quando o item está selecionado, não apenas sob o cursor. */
-        const r = document.createElement('div'); r.className = 'row'; /* Cria a linha que agrupa os botões de ação. */
-        [['Concluir', () => items = items.filter(x => x !== i)], [f < 1 ? 'Renovar' : 'Resgatar', () => i.t0 = Date.now()], ['Excluir', () => items = items.filter(x => x !== i)]].forEach(([t, fn], k) => { const bt = document.createElement('button'); bt.textContent = t; if (k === 0) bt.className = 'p'; bt.onclick = () => { fn(); if (!items.includes(i)) sel = null; save(); render(); showInfo() }; r.append(bt) }); box.append(r) /* Cria os botões para remover, renovar ou resgatar e associa cada ação ao estado. */
+    function atualizarFaixaDesenho() { const itensAtivos = obterItensAtivos(); geometriaPontos.setDrawRange(0, itensAtivos.length); geometriaHastes.setDrawRange(0, itensAtivos.length * 2) } /* Limita o desenho aos pontos ativos e às duas extremidades de cada haste. */
+    function mostrarInformacoes() { /* Atualiza o painel com detalhes e ações do item selecionado ou sob o cursor. */
+      const itemExibido = itensRadar.find(itemRadar => itemRadar.id === (idSobCursor || idSelecionado)); const painelInformacoes = elementoPorId('info'); /* Localiza o item prioritário para exibição e o painel de detalhes. */
+      if (!itemExibido) { painelInformacoes.textContent = 'Passe o cursor ou toque em um ponto.'; return } /* Exibe a instrução padrão se nenhum item estiver em foco. */
+      const fracaoDecorrida = fracaoPrazoDecorrido(itemExibido); painelInformacoes.replaceChildren(); const tituloItem = document.createElement('b'); tituloItem.textContent = itemExibido.text; painelInformacoes.append(tituloItem); /* Limpa o painel e mostra o texto do item com destaque. */
+      const detalhesCategoria = document.createElement('div'); detalhesCategoria.textContent = `${CATEGORIAS[itemExibido.cat].nome} · prioridade ${PRIORIDADES[itemExibido.pri].toLowerCase()}`; painelInformacoes.append(detalhesCategoria); /* Mostra categoria e prioridade do item. */
+      const detalhesPrazo = document.createElement('div'); detalhesPrazo.textContent = fracaoDecorrida < 1 ? `Criado há ${formatarDuracao(Date.now() - itemExibido.t0)} · sai em ${formatarDuracao((1 - fracaoDecorrida) * prazoSaidaMs)}` : 'Saiu do radar'; detalhesPrazo.style.color = 'var(--dim)'; painelInformacoes.append(detalhesPrazo); /* Exibe idade e tempo restante, ou indica que o item expirou. */
+      if (idSelecionado === itemExibido.id) { /* Só oferece ações quando o item está selecionado, não apenas sob o cursor. */
+        const linhaAcoes = document.createElement('div'); linhaAcoes.className = 'row'; /* Cria a linha que agrupa os botões de ação. */
+        [['Concluir', () => itensRadar = itensRadar.filter(itemRadar => itemRadar !== itemExibido)], [fracaoDecorrida < 1 ? 'Renovar' : 'Resgatar', () => itemExibido.t0 = Date.now()], ['Excluir', () => itensRadar = itensRadar.filter(itemRadar => itemRadar !== itemExibido)]].forEach(([rotuloAcao, executarAcao], indiceAcao) => { const botaoAcao = document.createElement('button'); botaoAcao.textContent = rotuloAcao; if (indiceAcao === 0) botaoAcao.className = 'p'; botaoAcao.onclick = () => { executarAcao(); if (!itensRadar.includes(itemExibido)) idSelecionado = null; salvarEstado(); renderizarListas(); mostrarInformacoes() }; linhaAcoes.append(botaoAcao) }); painelInformacoes.append(linhaAcoes) /* Cria os botões para remover, renovar ou resgatar e associa cada ação ao estado. */
       } /* Encerra a criação condicional dos controles. */
     } /* Encerra a atualização do painel de detalhes. */
-    function add() { const t = $('txt').value.trim(); if (!t) { $('txt').focus(); return } items.push(mk(t, +$('cat').value, +$('pri').value, 0)); $('txt').value = ''; sel = items[items.length - 1].id; save(); render(); showInfo() } /* Valida o texto, cria e seleciona um item e atualiza armazenamento e interface. */
-    $('add').onclick = add; $('txt').onkeydown = e => { if (e.key === 'Enter') add() }; /* Liga o botão Adicionar e a tecla Enter à criação de itens. */
-    $('life').onchange = e => { life = +e.target.value; save(); render() }; /* Atualiza o prazo selecionado, persiste-o e redesenha a lista. */
+    function adicionarItem() { const textoItem = elementoPorId('txt').value.trim(); if (!textoItem) { elementoPorId('txt').focus(); return } itensRadar.push(criarItem(textoItem, +elementoPorId('cat').value, +elementoPorId('pri').value, 0)); elementoPorId('txt').value = ''; idSelecionado = itensRadar[itensRadar.length - 1].id; salvarEstado(); renderizarListas(); mostrarInformacoes() } /* Valida o texto, cria e seleciona um item e atualiza armazenamento e interface. */
+    elementoPorId('add').onclick = adicionarItem; elementoPorId('txt').onkeydown = eventoTeclado => { if (eventoTeclado.key === 'Enter') adicionarItem() }; /* Liga o botão Adicionar e a tecla Enter à criação de itens. */
+    elementoPorId('life').onchange = eventoAlteracao => { prazoSaidaMs = +eventoAlteracao.target.value; salvarEstado(); renderizarListas() }; /* Atualiza o prazo selecionado, persiste-o e redesenha a lista. */
 
-    let drag = null, moved = 0; /* Rastreia o gesto atual e a distância movida para distinguir arrasto de clique. */
-    canvas.addEventListener('pointerdown', e => { drag = { x: e.clientX, y: e.clientY }; moved = 0; canvas.setPointerCapture(e.pointerId) }); /* Inicia o gesto e captura o ponteiro para continuar recebendo movimento. */
-    canvas.addEventListener('pointerup', e => { drag = null; if (moved < 5) { const h = nearest(e); sel = h ? h.id : null; hover = null; render(); showInfo() } }); /* Se o gesto foi clique, seleciona o ponto mais próximo e atualiza a interface. */
-    canvas.addEventListener('pointermove', e => { /* Usa movimentos para orbitar a câmera ou detectar o ponto sob o cursor. */
-      if (drag) { moved += Math.abs(e.clientX - drag.x) + Math.abs(e.clientY - drag.y); th -= (e.clientX - drag.x) * .006; ph = Math.max(.15, Math.min(1.5, ph - (e.clientY - drag.y) * .006)); drag = { x: e.clientX, y: e.clientY }; placeCam(); return } /* Durante o arrasto, atualiza os ângulos, limita a inclinação e reposiciona a câmera. */
-      const h = nearest(e); const id = h ? h.id : null; if (id !== hover) { hover = id; showInfo() } /* Fora do arrasto, atualiza os detalhes apenas quando muda o ponto sob o cursor. */
+    let gestoArrasto = null, distanciaArrastadaPx = 0; /* Rastreia o gesto atual e a distância movida para distinguir arrasto de clique. */
+    canvasRadar.addEventListener('pointerdown', eventoPonteiro => { gestoArrasto = { x: eventoPonteiro.clientX, y: eventoPonteiro.clientY }; distanciaArrastadaPx = 0; canvasRadar.setPointerCapture(eventoPonteiro.pointerId) }); /* Inicia o gesto e captura o ponteiro para continuar recebendo movimento. */
+    canvasRadar.addEventListener('pointerup', eventoPonteiro => { gestoArrasto = null; if (distanciaArrastadaPx < 5) { const itemProximo = encontrarItemMaisProximo(eventoPonteiro); idSelecionado = itemProximo ? itemProximo.id : null; idSobCursor = null; renderizarListas(); mostrarInformacoes() } }); /* Se o gesto foi clique, seleciona o ponto mais próximo e atualiza a interface. */
+    canvasRadar.addEventListener('pointermove', eventoPonteiro => { /* Usa movimentos para orbitar a câmera ou detectar o ponto sob o cursor. */
+      if (gestoArrasto) { distanciaArrastadaPx += Math.abs(eventoPonteiro.clientX - gestoArrasto.x) + Math.abs(eventoPonteiro.clientY - gestoArrasto.y); anguloHorizontal -= (eventoPonteiro.clientX - gestoArrasto.x) * .006; anguloVertical = Math.max(.15, Math.min(1.5, anguloVertical - (eventoPonteiro.clientY - gestoArrasto.y) * .006)); gestoArrasto = { x: eventoPonteiro.clientX, y: eventoPonteiro.clientY }; posicionarCamera(); return } /* Durante o arrasto, atualiza os ângulos, limita a inclinação e reposiciona a câmera. */
+      const itemSobPonteiro = encontrarItemMaisProximo(eventoPonteiro); const novoIdSobCursor = itemSobPonteiro ? itemSobPonteiro.id : null; if (novoIdSobCursor !== idSobCursor) { idSobCursor = novoIdSobCursor; mostrarInformacoes() } /* Fora do arrasto, atualiza os detalhes apenas quando muda o ponto sob o cursor. */
     }); /* Encerra o tratamento do movimento do ponteiro. */
-    canvas.addEventListener('wheel', e => { e.preventDefault(); dist = Math.max(12, Math.min(50, dist + e.deltaY * .02)); placeCam() }, { passive: false }); /* Evita a rolagem da página e limita o zoom da câmera entre 12 e 50 unidades. */
-    function pos(i) { const f = Math.min(frac(i), 1), r = (.06 + .94 * f) * R, b = ((i.cat * 90 + 45) + jit(i.id) * 70) * Math.PI / 180; return [r * Math.sin(b), -(.3 + i.pri * 1.2) * DS / 3 * 1.4, -r * Math.cos(b), b] } /* Calcula posição 3D: idade controla o raio, categoria o setor e prioridade a altura. */
-    function nearest(e) { let best = null, bd = 18; const v = new THREE.Vector3(); active().forEach(i => { const p = pos(i); v.set(p[0], p[1], p[2]).project(camera); const d = Math.hypot((v.x + 1) / 2 * innerWidth - e.clientX, (1 - v.y) / 2 * innerHeight - e.clientY); if (d < bd) { bd = d; best = i } }); return best } /* Projeta os itens ativos na tela e retorna o mais próximo dentro de 18 pixels. */
+    canvasRadar.addEventListener('wheel', eventoRoda => { eventoRoda.preventDefault(); distanciaCamera = Math.max(12, Math.min(50, distanciaCamera + eventoRoda.deltaY * .02)); posicionarCamera() }, { passive: false }); /* Evita a rolagem da página e limita o zoom da câmera entre 12 e 50 unidades. */
+    function calcularPosicaoItem(itemRadar) { const fracaoIdade = Math.min(fracaoPrazoDecorrido(itemRadar), 1), raioAtual = (.06 + .94 * fracaoIdade) * RAIO_RADAR, anguloSetor = ((itemRadar.cat * 90 + 45) + deslocamentoAngularPorId(itemRadar.id) * 70) * Math.PI / 180; return [raioAtual * Math.sin(anguloSetor), -(.3 + itemRadar.pri * 1.2) * ESCALA_VERTICAL / 3 * 1.4, -raioAtual * Math.cos(anguloSetor), anguloSetor] } /* Calcula posição 3D: idade controla o raio, categoria o setor e prioridade a altura. */
+    function encontrarItemMaisProximo(eventoPonteiro) { let itemMaisProximo = null, menorDistanciaPx = 18; const posicaoProjetada = new THREE.Vector3(); obterItensAtivos().forEach(itemRadar => { const posicaoItem = calcularPosicaoItem(itemRadar); posicaoProjetada.set(posicaoItem[0], posicaoItem[1], posicaoItem[2]).project(cameraRadar); const distanciaNaTelaPx = Math.hypot((posicaoProjetada.x + 1) / 2 * innerWidth - eventoPonteiro.clientX, (1 - posicaoProjetada.y) / 2 * innerHeight - eventoPonteiro.clientY); if (distanciaNaTelaPx < menorDistanciaPx) { menorDistanciaPx = distanciaNaTelaPx; itemMaisProximo = itemRadar } }); return itemMaisProximo } /* Projeta os itens ativos na tela e retorna o mais próximo dentro de 18 pixels. */
 
     /* ---------- loop ---------- */
-    let ang = 0, last = performance.now(), tick = 0, nAct = -1; /* Guarda ângulo da varredura, instante anterior, temporizador da lista e quantidade ativa. */
-    const warm = new THREE.Color('#ff6b5b'), tmp = new THREE.Color(); /* Prepara a cor de alerta e um objeto de cor reutilizável no loop. */
-    function frame(now) { /* Atualiza a animação e renderiza um quadro da cena. */
-      const dt = Math.min((now - last) / 1000, .1); last = now; ang = (ang + dt * 1.1) % TAU; sweepMat.uniforms.uA.value = ang; /* Calcula o tempo do quadro e avança o ângulo da varredura. */
-      const a = active(); /* Obtém a lista atual de itens que ainda estão dentro do radar. */
-      if (a.length !== nAct) { nAct = a.length; render(); showInfo() } /* Atualiza listas e detalhes quando algum item entra ou sai do radar. */
-      if ((tick += dt) > 10) { tick = 0; render(); showInfo() } /* Atualiza os tempos exibidos periodicamente, mesmo sem mudança na quantidade. */
-      a.forEach((i, k) => { /* Atualiza atributos gráficos de cada ponto ativo. */
-        const f = frac(i), p = pos(i), d = ((ang - p[3]) % TAU + TAU) % TAU, s = Math.exp(-d * .75), al = (.65 + .35 * s) * (f > .85 ? .7 + .3 * Math.sin(now / 180) : 1); /* Calcula idade, posição, proximidade da varredura e opacidade com alerta ao expirar. */
-        tmp.set(CATS[i.cat].c).lerp(warm, Math.max(0, (f - .7) / .3) * .8); /* Mistura a cor da categoria com vermelho quando o prazo está próximo. */
-        pPos.set([p[0], p[1], p[2]], k * 3); pCol.set([tmp.r, tmp.g, tmp.b], k * 3); pAl[k] = al; pSz[k] = ((i.id === hover || i.id === sel) ? 1.9 : 1) * (1.4 + 1.2 * s); /* Atualiza posição, cor, opacidade e tamanho do ponto nos buffers. */
-        const m = al * .9; sPos.set([p[0], 0, p[2], p[0], p[1], p[2]], k * 6); sCol.set([tmp.r * m, tmp.g * m, tmp.b * m, tmp.r * m * .2, tmp.g * m * .2, tmp.b * m * .2], k * 6) /* Atualiza a haste vertical com cor e transparência em gradiente. */
+    let anguloVarredura = 0, tempoQuadroAnteriorMs = performance.now(), tempoDesdeAtualizacaoLista = 0, quantidadeAtivaAnterior = -1; /* Guarda ângulo, instante anterior, temporizador da lista e quantidade ativa. */
+    const corAlerta = new THREE.Color('#ff6b5b'), corTemporaria = new THREE.Color(); /* Prepara a cor de alerta e um objeto de cor reutilizável no loop. */
+    function animarCena(tempoAtualMs) { /* Atualiza a animação e renderiza um quadro da cena. */
+      const deltaTempoSegundos = Math.min((tempoAtualMs - tempoQuadroAnteriorMs) / 1000, .1); tempoQuadroAnteriorMs = tempoAtualMs; anguloVarredura = (anguloVarredura + deltaTempoSegundos * 1.1) % VOLTA_COMPLETA_RAD; materialVarredura.uniforms.uA.value = anguloVarredura; /* Calcula o tempo do quadro e avança o ângulo da varredura. */
+      const itensAtivos = obterItensAtivos(); /* Obtém a lista atual de itens que ainda estão dentro do radar. */
+      if (itensAtivos.length !== quantidadeAtivaAnterior) { quantidadeAtivaAnterior = itensAtivos.length; renderizarListas(); mostrarInformacoes() } /* Atualiza listas e detalhes quando algum item entra ou sai do radar. */
+      if ((tempoDesdeAtualizacaoLista += deltaTempoSegundos) > 10) { tempoDesdeAtualizacaoLista = 0; renderizarListas(); mostrarInformacoes() } /* Atualiza os tempos exibidos periodicamente, mesmo sem mudança na quantidade. */
+      itensAtivos.forEach((itemRadar, indicePonto) => { /* Atualiza atributos gráficos de cada ponto ativo. */
+        const fracaoPrazo = fracaoPrazoDecorrido(itemRadar), posicaoItem = calcularPosicaoItem(itemRadar), diferencaAngular = ((anguloVarredura - posicaoItem[3]) % VOLTA_COMPLETA_RAD + VOLTA_COMPLETA_RAD) % VOLTA_COMPLETA_RAD, intensidadeVarredura = Math.exp(-diferencaAngular * .75), opacidadePonto = (.65 + .35 * intensidadeVarredura) * (fracaoPrazo > .85 ? .7 + .3 * Math.sin(tempoAtualMs / 180) : 1); /* Calcula idade, posição, proximidade da varredura e opacidade com alerta ao expirar. */
+        corTemporaria.set(CATEGORIAS[itemRadar.cat].cor).lerp(corAlerta, Math.max(0, (fracaoPrazo - .7) / .3) * .8); /* Mistura a cor da categoria com vermelho quando o prazo está próximo. */
+        posicoesPontos.set([posicaoItem[0], posicaoItem[1], posicaoItem[2]], indicePonto * 3); coresPontos.set([corTemporaria.r, corTemporaria.g, corTemporaria.b], indicePonto * 3); opacidadesPontos[indicePonto] = opacidadePonto; tamanhosPontos[indicePonto] = ((itemRadar.id === idSobCursor || itemRadar.id === idSelecionado) ? 1.9 : 1) * (1.4 + 1.2 * intensidadeVarredura); /* Atualiza posição, cor, opacidade e tamanho do ponto nos buffers. */
+        const intensidadeHaste = opacidadePonto * .9; posicoesHastes.set([posicaoItem[0], 0, posicaoItem[2], posicaoItem[0], posicaoItem[1], posicaoItem[2]], indicePonto * 6); coresHastes.set([corTemporaria.r * intensidadeHaste, corTemporaria.g * intensidadeHaste, corTemporaria.b * intensidadeHaste, corTemporaria.r * intensidadeHaste * .2, corTemporaria.g * intensidadeHaste * .2, corTemporaria.b * intensidadeHaste * .2], indicePonto * 6) /* Atualiza a haste vertical com cor e transparência em gradiente. */
       }); /* Encerra a atualização dos atributos de cada item ativo. */
-      ['position', 'color', 'aAl', 'aSz'].forEach(n => pg.attributes[n].needsUpdate = true); sg.attributes.position.needsUpdate = sg.attributes.color.needsUpdate = true; /* Marca os buffers alterados para envio à GPU. */
-      renderer.render(scene, camera); requestAnimationFrame(frame) /* Desenha a cena e agenda o próximo quadro da animação. */
+      ['position', 'color', 'aAl', 'aSz'].forEach(nomeAtributo => geometriaPontos.attributes[nomeAtributo].needsUpdate = true); geometriaHastes.attributes.position.needsUpdate = geometriaHastes.attributes.color.needsUpdate = true; /* Marca os buffers alterados para envio à GPU. */
+      renderizadorWebGL.render(cenaRadar, cameraRadar); requestAnimationFrame(animarCena) /* Desenha a cena e agenda o próximo quadro da animação. */
     } /* Encerra a função que produz cada quadro. */
-    render(); showInfo(); requestAnimationFrame(frame); /* Renderiza a interface inicial e inicia o loop de animação. */
+    renderizarListas(); mostrarInformacoes(); requestAnimationFrame(animarCena); /* Renderiza a interface inicial e inicia o loop de animação. */
   </script>
 </body>
 
